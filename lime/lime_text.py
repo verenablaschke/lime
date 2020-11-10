@@ -363,8 +363,7 @@ class LimeTextExplainer(object):
 
         self.remove_ngrams = remove_ngrams
         self.utterance2ngrams = utterance2ngrams 
-        if remove_ngrams and utterance2ngrams:
-            self.ngram_lvl = True
+        self.ngram_lvl = remove_ngrams and utterance2ngrams
 
     def explain_instance(self,
                          text_instance,
