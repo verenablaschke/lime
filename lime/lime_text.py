@@ -1,6 +1,28 @@
-"""
-Functions for explaining text classifiers.
-"""
+# license for LimeTextExplainer:
+# Copyright (c) 2016, Marco Tulio Correia Ribeiro
+# All rights reserved.
+
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+
+# * Redistributions of source code must retain the above copyright notice, this
+#   list of conditions and the following disclaimer.
+
+# * Redistributions in binary form must reproduce the above copyright notice,
+#   this list of conditions and the following disclaimer in the documentation
+#   and/or other materials provided with the distribution.
+
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
 from functools import partial
 import itertools
 import json
@@ -11,28 +33,25 @@ import scipy as sp
 import sklearn
 from sklearn.utils import check_random_state
 
-from . import explanation
-from . import lime_base
-
+from lime import explanation  # VB: updated module
+from lime import lime_base  # VB: updated module
 
 class TextDomainMapper(explanation.DomainMapper):
     """Maps feature ids to words or word-positions"""
 
-    def __init__(self, indexed_string):
+    def __init__(self, indexed_string, ngram_lvl=False):
         """Initializer.
-
         Args:
             indexed_string: lime_text.IndexedString, original string
         """
         self.indexed_string = indexed_string
+        self.ngram_lvl = ngram_lvl
 
     def map_exp_ids(self, exp, positions=False):
         """Maps ids to words or word-position strings.
-
         Args:
             exp: list of tuples [(id, weight), (id,weight)]
             positions: if True, also return word positions
-
         Returns:
             list of tuples (word, weight), or (word_positions, weight) if
             examples: ('bad', 1) or ('bad_3-6-12', 1)
@@ -45,13 +64,15 @@ class TextDomainMapper(explanation.DomainMapper):
                         self.indexed_string.string_position(x[0])))), x[1])
                    for x in exp]
         else:
-            exp = [(self.indexed_string.word(x[0]), x[1]) for x in exp]
+            if ngram_lvl:
+                exp = [(self.indexed_string.ngrams[x[0]], x[1]) for x in exp]
+            else:
+                exp = [(self.indexed_string.word(x[0]), x[1]) for x in exp]
         return exp
 
     def visualize_instance_html(self, exp, label, div_name, exp_object_name,
                                 text=True, opacity=True):
         """Adds text with highlighted words to visualization.
-
         Args:
              exp: list of tuples [(id, weight), (id,weight)]
              label: label id (integer)
@@ -82,9 +103,8 @@ class IndexedString(object):
     """String with various indexes."""
 
     def __init__(self, raw_string, split_expression=r'\W+', bow=True,
-                 mask_string=None):
+                 mask_string=None, ngrams=[]):
         """Initializer.
-
         Args:
             raw_string: string with raw text in it
             split_expression: Regex string or callable. If regex string, will be used with re.split.
@@ -98,6 +118,7 @@ class IndexedString(object):
         """
         self.raw = raw_string
         self.mask_string = 'UNKWORDZ' if mask_string is None else mask_string
+        self.ngrams = ngrams
 
         if callable(split_expression):
             tokens = split_expression(self.raw)
@@ -144,10 +165,13 @@ class IndexedString(object):
     def raw_string(self):
         """Returns the original raw string"""
         return self.raw
-
+    
     def num_words(self):
         """Returns the number of tokens in the vocabulary for this document."""
         return len(self.inverse_vocab)
+
+    def num_ngrams(self):
+        return len(self.ngrams)
 
     def word(self, id_):
         """Returns the word that corresponds to id_ (int)"""
@@ -162,13 +186,10 @@ class IndexedString(object):
 
     def inverse_removing(self, words_to_remove):
         """Returns a string after removing the appropriate words.
-
         If self.bow is false, replaces word with UNKWORDZ instead of removing
         it.
-
         Args:
             words_to_remove: list of ids (ints) to remove
-
         Returns:
             original raw string with appropriate words removed.
         """
@@ -214,7 +235,6 @@ class IndexedCharacters(object):
 
     def __init__(self, raw_string, bow=True, mask_string=None):
         """Initializer.
-
         Args:
             raw_string: string with raw text in it
             bow: if True, a char is the same everywhere in the text - i.e. we
@@ -271,13 +291,10 @@ class IndexedCharacters(object):
 
     def inverse_removing(self, words_to_remove):
         """Returns a string after removing the appropriate words.
-
         If self.bow is false, replaces word with UNKWORDZ instead of removing
         it.
-
         Args:
             words_to_remove: list of ids (ints) to remove
-
         Returns:
             original raw string with appropriate words removed.
         """
@@ -313,9 +330,10 @@ class LimeTextExplainer(object):
                  bow=True,
                  mask_string=None,
                  random_state=None,
-                 char_level=False):
+                 char_level=False,
+                 remove_ngrams=None,
+                 utterance2ngrams=None):
         """Init function.
-
         Args:
             kernel_width: kernel width for the exponential kernel.
             kernel: similarity kernel that takes euclidean distances and kernel
@@ -365,6 +383,11 @@ class LimeTextExplainer(object):
         self.split_expression = split_expression
         self.char_level = char_level
 
+        self.remove_ngrams = remove_ngrams
+        self.utterance2ngrams = utterance2ngrams 
+        if remove_ngrams and utterance2ngrams:
+            self.ngram_lvl = True
+
     def explain_instance(self,
                          text_instance,
                          classifier_fn,
@@ -375,12 +398,10 @@ class LimeTextExplainer(object):
                          distance_metric='cosine',
                          model_regressor=None):
         """Generates explanations for a prediction.
-
         First, we generate neighborhood data by randomly hiding features from
         the instance (see __data_labels_distance_mapping). We then learn
         locally weighted linear models on this neighborhood data to explain
         each of the classes in an interpretable way (see lime_base.py).
-
         Args:
             text_instance: raw text string to be explained.
             classifier_fn: classifier prediction probability function, which
@@ -402,14 +423,19 @@ class LimeTextExplainer(object):
             An Explanation object (see explanation.py) with the corresponding
             explanations.
         """
-
         indexed_string = (IndexedCharacters(
             text_instance, bow=self.bow, mask_string=self.mask_string)
                           if self.char_level else
-                          IndexedString(text_instance, bow=self.bow,
+                            IndexedString(text_instance, bow=self.bow,
                                         split_expression=self.split_expression,
-                                        mask_string=self.mask_string))
-        domain_mapper = TextDomainMapper(indexed_string)
+                                        mask_string=self.mask_string,
+                                        ngrams=self.utterance2ngrams(text_instance))
+                          if self.ngram_lvl else
+                            IndexedString(text_instance, bow=self.bow,
+                                        split_expression=self.split_expression,
+                                        mask_string=self.mask_string)
+                          )
+        domain_mapper = TextDomainMapper(indexed_string, ngram_lvl=self.ngram_lvl)
         data, yss, distances = self.__data_labels_distances(
             indexed_string, classifier_fn, num_samples,
             distance_metric=distance_metric)
@@ -438,7 +464,6 @@ class LimeTextExplainer(object):
                                 num_samples,
                                 distance_metric='cosine'):
         """Generates a neighborhood around a prediction.
-
         Generates neighborhood data by randomly removing words from
         the instance, and predicting with the classifier. Uses cosine distance
         to compute distances between original and perturbed instances.
@@ -450,8 +475,6 @@ class LimeTextExplainer(object):
             num_samples: size of the neighborhood to learn the linear model
             distance_metric: the distance metric to use for sample weighting,
                 defaults to cosine similarity.
-
-
         Returns:
             A tuple (data, labels, distances), where:
                 data: dense num_samples * K binary matrix, where K is the
@@ -468,17 +491,40 @@ class LimeTextExplainer(object):
             return sklearn.metrics.pairwise.pairwise_distances(
                 x, x[0], metric=distance_metric).ravel() * 100
 
-        doc_size = indexed_string.num_words()
-        sample = self.random_state.randint(1, doc_size + 1, num_samples - 1)
-        data = np.ones((num_samples, doc_size))
-        data[0] = np.ones(doc_size)
-        features_range = range(doc_size)
-        inverse_data = [indexed_string.raw_string()]
-        for i, size in enumerate(sample, start=1):
-            inactive = self.random_state.choice(features_range, size,
-                                                replace=False)
-            data[i, inactive] = 0
-            inverse_data.append(indexed_string.inverse_removing(inactive))
+        if self.ngram_lvl:
+            doc_size = indexed_string.num_ngrams()
+            sample = self.random_state.randint(1, doc_size + 1, num_samples - 1)
+            data = np.ones((num_samples, doc_size))
+            data[0] = np.ones(doc_size)
+            features_range = range(doc_size)
+            ngrams = indexed_string.ngrams
+            utterance = indexed_string.raw_string()
+            inverse_data = [utterance]
+            for i, size in enumerate(sample, start=1):
+                inactive = set()
+                n_removed = 0
+                while n_removed < size:
+                    inactive.add(self.random_state.choice(features_range, 1,
+                                                          replace=False)[0])
+                    cleaned_string = self.remove_ngrams(utterance, ngrams, inactive)
+                    cleaned_ngrams = self.utterance2ngrams(cleaned_string)
+                    n_removed = doc_size - len(cleaned_ngrams)
+                for j, ngram in enumerate(ngrams):
+                    if ngram not in cleaned:
+                        data[i, j] = 0
+                inverse_data.append(cleaned_string)
+        else:
+            doc_size = indexed_string.num_words()
+            sample = self.random_state.randint(1, doc_size + 1, num_samples - 1)
+            data = np.ones((num_samples, doc_size))
+            data[0] = np.ones(doc_size)
+            features_range = range(doc_size)
+            inverse_data = [indexed_string.raw_string()]
+            for i, size in enumerate(sample, start=1):
+                inactive = self.random_state.choice(features_range, size,
+                                                    replace=False)
+                data[i, inactive] = 0
+                inverse_data.append(indexed_string.inverse_removing(inactive))
         labels = classifier_fn(inverse_data)
         distances = distance_fn(sp.sparse.csr_matrix(data))
         return data, labels, distances
