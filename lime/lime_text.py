@@ -1,28 +1,6 @@
-# license for LimeTextExplainer:
-# Copyright (c) 2016, Marco Tulio Correia Ribeiro
-# All rights reserved.
-
-# Redistribution and use in source and binary forms, with or without
-# modification, are permitted provided that the following conditions are met:
-
-# * Redistributions of source code must retain the above copyright notice, this
-#   list of conditions and the following disclaimer.
-
-# * Redistributions in binary form must reproduce the above copyright notice,
-#   this list of conditions and the following disclaimer in the documentation
-#   and/or other materials provided with the distribution.
-
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
+"""
+Functions for explaining text classifiers.
+"""
 from functools import partial
 import itertools
 import json
@@ -33,8 +11,8 @@ import scipy as sp
 import sklearn
 from sklearn.utils import check_random_state
 
-from lime import explanation  # VB: updated module
-from lime import lime_base  # VB: updated module
+from . import explanation
+from . import lime_base
 
 class TextDomainMapper(explanation.DomainMapper):
     """Maps feature ids to words or word-positions"""
@@ -64,7 +42,7 @@ class TextDomainMapper(explanation.DomainMapper):
                         self.indexed_string.string_position(x[0])))), x[1])
                    for x in exp]
         else:
-            if ngram_lvl:
+            if self.ngram_lvl:
                 exp = [(self.indexed_string.ngrams[x[0]], x[1]) for x in exp]
             else:
                 exp = [(self.indexed_string.word(x[0]), x[1]) for x in exp]
@@ -510,7 +488,7 @@ class LimeTextExplainer(object):
                     cleaned_ngrams = self.utterance2ngrams(cleaned_string)
                     n_removed = doc_size - len(cleaned_ngrams)
                 for j, ngram in enumerate(ngrams):
-                    if ngram not in cleaned:
+                    if ngram not in cleaned_ngrams:
                         data[i, j] = 0
                 inverse_data.append(cleaned_string)
         else:
