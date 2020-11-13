@@ -310,7 +310,8 @@ class LimeTextExplainer(object):
                  random_state=None,
                  char_level=False,
                  remove_ngrams=None,
-                 utterance2ngrams=None):
+                 utterance2ngrams=None,
+                 recalculate_ngrams=False):
         """Init function.
         Args:
             kernel_width: kernel width for the exponential kernel.
@@ -364,6 +365,7 @@ class LimeTextExplainer(object):
         self.remove_ngrams = remove_ngrams
         self.utterance2ngrams = utterance2ngrams 
         self.ngram_lvl = remove_ngrams and utterance2ngrams
+        self.recalculate_ngrams = recalculate_ngrams
 
     def explain_instance(self,
                          text_instance,
@@ -407,12 +409,18 @@ class LimeTextExplainer(object):
                                         split_expression=self.split_expression,
                                         mask_string=self.mask_string,
                                         ngrams=self.utterance2ngrams(text_instance))
+                          if self.ngram_lvl and self.recalculate_ngrams else
+                              IndexedString(' '.join(self.utterance2ngrams(text_instance)),
+                                        bow=self.bow,
+                                        split_expression=self.split_expression,
+                                        mask_string=self.mask_string)
                           if self.ngram_lvl else
                             IndexedString(text_instance, bow=self.bow,
                                         split_expression=self.split_expression,
                                         mask_string=self.mask_string)
                           )
-        domain_mapper = TextDomainMapper(indexed_string, ngram_lvl=self.ngram_lvl)
+        domain_mapper = TextDomainMapper(indexed_string,
+                                         ngram_lvl=self.ngram_lvl and self.recalculate_ngrams)
         data, yss, distances = self.__data_labels_distances(
             indexed_string, classifier_fn, num_samples,
             distance_metric=distance_metric)
@@ -468,7 +476,7 @@ class LimeTextExplainer(object):
             return sklearn.metrics.pairwise.pairwise_distances(
                 x, x[0], metric=distance_metric).ravel() * 100
 
-        if self.ngram_lvl:
+        if self.ngram_lvl and self.recalculate_ngrams:
             doc_size = indexed_string.num_ngrams()
             sample = self.random_state.randint(1, doc_size + 1, num_samples - 1)
             data = np.ones((num_samples, doc_size))
