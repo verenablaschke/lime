@@ -71,7 +71,7 @@ class TextDomainMapper(explanation.DomainMapper):
             [itertools.product([x[0]], x[1], [x[2]]) for x in exp]))
         all_occurrences = [(x[0], int(x[1]), x[2]) for x in all_occurrences]
         ret = '''
-            %s.show_raw_text(%s, %d, %s, %s, %s);
+#             %s.show_raw_text(%s, %d, %s, %s, %s);
             ''' % (exp_object_name, json.dumps(all_occurrences), label,
                    json.dumps(text), div_name, json.dumps(opacity))
         return ret
@@ -311,6 +311,7 @@ class LimeTextExplainer(object):
                  char_level=False,
                  remove_ngrams=None,
                  utterance2ngrams=None,
+                 ngram_lvl=False,
                  recalculate_ngrams=False):
         """Init function.
         Args:
@@ -364,7 +365,7 @@ class LimeTextExplainer(object):
 
         self.remove_ngrams = remove_ngrams
         self.utterance2ngrams = utterance2ngrams 
-        self.ngram_lvl = remove_ngrams and utterance2ngrams
+        self.ngram_lvl = ngram_lvl or (remove_ngrams and utterance2ngrams)
         self.recalculate_ngrams = recalculate_ngrams
 
     def explain_instance(self,
